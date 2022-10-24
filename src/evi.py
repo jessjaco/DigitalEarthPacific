@@ -215,9 +215,9 @@ if __name__ == "__main__":
     function = globals()[function_name]
     year = 2021
     prefix = f"{function_name}/{year}/{function_name}_{year}"
-#    with cluster.get_client() as client:
-#        print(client.dashboard_link)
-#        process_by_scene(function, year, prefix)
+    with cluster.get_client() as client:
+        print(client.dashboard_link)
+        process_by_scene(function, year, prefix)
 
     with Client() as local_client:
         print(local_client.dashboard_link)
