@@ -1,6 +1,7 @@
 import json
 import io
 import os
+from pathlib import Path
 from time import time
 from typing import Callable, Dict, List
 
@@ -23,6 +24,9 @@ import xrspatial.multispectral
 from utils import write_to_blob_storage
 
 CHUNKSIZE = 4096
+OUTPUT_VALUE_MULTIPLIER = 1000
+OUTPUT_SCALE_FACTOR = [1. / OUTPUT_VALUE_MULTIPLIER]
+OUTPUT_NODATA = -32767
 
 
 def mask_landsat_clouds(xr: DataArray) -> DataArray:
@@ -150,10 +154,10 @@ def process_by_scene(function: Callable, year: int, output_prefix: str) -> None:
         )
 
         scaled_results = (
-            np.multiply(results, 10000)
-            .where(results.notnull(), -9999)
+            np.multiply(results, OUTPUT_VALUE_MULTIPLIER)
+            .where(results.notnull(), OUTPUT_NODATA)
             .astype("int16")
-            .rio.write_nodata(-9999)
+            .rio.write_nodata(OUTPUT_NODATA)
             .rio.write_crs(item_xr.rio.crs)
         )
 
@@ -173,11 +177,12 @@ def process_by_scene(function: Callable, year: int, output_prefix: str) -> None:
 def mosaic_tiles(
     prefix: str,
     client: Client,
-    container_name: str = "depwesteurope",
+    storage_account: str = os.environ["AZURE_STORAGE_ACCOUNT"],
+    container_name: str = "output",
     credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"],
 ) -> None:
     container_client = azure.storage.blob.ContainerClient(
-        f"https://{container_name}.blob.core.windows.net",
+        f"https://{storage_account}.blob.core.windows.net",
         container_name=container_name,
         credential=credential,
     )
@@ -190,28 +195,30 @@ def mosaic_tiles(
     with rasterio.open("data/aoi.tif") as t:
         bounds = list(t.bounds)
 
-    vrt_file = f"data/{prefix}.vrt"
+    local_prefix = Path(prefix).stem
+    vrt_file = f"data/{local_prefix}.vrt"
     gdal.BuildVRT(vrt_file, blobs, outputBounds=bounds)
-    mosaic_file = f"data/{prefix}.tif"
+    mosaic_file = f"data/{local_prefix}.tif"
 
     rx.open_rasterio(vrt_file, chunks=True).rio.to_raster(
         mosaic_file, compress="LZW", predictor=2, lock=Lock("rio", client=client)
     )
 
     with rasterio.open(mosaic_file, "r+") as dst:
-        dst.scales = [0.0001]
+        dst.scales = [OUTPUT_SCALE_FACTOR]
 
 
 if __name__ == "__main__":
     cluster = GatewayCluster(worker_cores=1, worker_memory=8)
     cluster.scale(200)
-    function = evi
+    function_name = 'evi'
+    function = globals()[function_name]
     year = 2021
-    prefix = f"evi_{year}"
-    with cluster.get_client() as client:
-        print(client.dashboard_link)
-        process_by_scene(function, year, prefix)
+    prefix = f"{function_name}/{year}/{function_name}_{year}"
+#    with cluster.get_client() as client:
+#        print(client.dashboard_link)
+#        process_by_scene(function, year, prefix)
 
     with Client() as local_client:
         print(local_client.dashboard_link)
-        mosaic_tiles(prefix, local_client)
+        mosaic_tiles(prefix=prefix, client=local_client)
