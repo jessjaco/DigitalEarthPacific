@@ -74,8 +74,9 @@ def get_bbox(gpdf: gpd.GeoDataFrame) -> List[float]:
     # Or the opposite!
     bbox_crosses_antimeridian = bbox[0] < 0 and bbox[2] > 0
     if bbox_crosses_antimeridian:
-        bbox[2] = bbox[0]
-        bbox[0] = -179.999999999999
+        # This may be overkill, but nothing else was really working
+        bbox[0] = -179.9999999999
+        bbox[2] = 179.9999999999
     return bbox
 
 
@@ -114,12 +115,12 @@ def process_by_scene(function: Callable, year: int, output_prefix: str) -> None:
             dict(
                 collections=["landsat-c2-l2"],
                 datetime=str(year),
-                bbox=get_bbox(these_areas),
+                bbox=get_bbox(these_areas)
             ),
         )
 
         if len(item_collection) == 0:
-            print(f"{path:03d}-{row:03d} ** NO ITEMS ** ")
+            print(f"{path:03d}-{row:03d} | ** NO ITEMS **")
             continue
 
         fix_bad_epsgs(item_collection)
@@ -205,8 +206,7 @@ def mosaic_tiles(
     )
 
     with rasterio.open(mosaic_file, "r+") as dst:
-        dst.scales = [OUTPUT_SCALE_FACTOR]
-
+        dst.scales = OUTPUT_SCALE_FACTOR
 
 if __name__ == "__main__":
     cluster = GatewayCluster(worker_cores=1, worker_memory=8)
@@ -221,4 +221,4 @@ if __name__ == "__main__":
 
     with Client() as local_client:
         print(local_client.dashboard_link)
-        mosaic_tiles(prefix=prefix, client=local_client)
+        mosaic_tiles(prefix=prefix, client=client)

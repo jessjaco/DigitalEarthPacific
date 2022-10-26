@@ -39,13 +39,15 @@ def write_to_blob_storage(
     container_name: str = "output",
     credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"],
 ) -> None:
-    container_client = azure.storage.blob.ContainerClient( f"https://{storage_account}.blob.core.windows.net", container_name=container_name, credential=credential,)
+    container_client = azure.storage.blob.ContainerClient(
+            f"https://{storage_account}.blob.core.windows.net", 
+            container_name=container_name, 
+            credential=credential,
+    )
 
     with io.BytesIO() as buffer:
         xr.rio.to_raster(buffer, **write_args)
         buffer.seek(0)
-#        with rasterio.open(buffer, "r+") as dst:
-#            dst.scales = output_scale
         blob_client = container_client.get_blob_client(path)
         blob_client.upload_blob(buffer, overwrite=True)
 
