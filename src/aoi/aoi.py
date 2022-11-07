@@ -29,10 +29,9 @@ countries = [
 ]
 
 all_polys = (
-    #  gpd.read_file("https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gpkg.zip")
+      gpd.read_file("https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gpkg.zip").query("NAME_0 in @countries")
     #   ^^^ untested, but should work (slow, etc)
-    gpd.read_file("data/gadm_410-gpkg/gadm_410.gpkg").query("NAME_0 in @countries")
-    #    .to_crs(epsg=8859)
+#    gpd.read_file("data/gadm_410-gpkg/gadm_410.gpkg")
 )
 
 # Note that there are some polys with TYPE_1 / ENGTYPE_1 codes of "Atol" and

@@ -51,3 +51,16 @@ def write_to_blob_storage(
         blob_client = container_client.get_blob_client(path)
         blob_client.upload_blob(buffer, overwrite=True)
 
+
+import numpy as np
+import rioxarray
+def scale_to_int16(da: DataArray, output_multiplier: int, output_nodata: int) -> DataArray
+    return (
+        np.multiply(da, output_multiplier)
+        .where(da.notnull(), output_nodata)
+        .astype("int16")
+        .rio.write_nodata(output_nodata)
+        .rio.write_crs(da.rio.crs)
+    )
+
+
