@@ -1,3 +1,4 @@
+from pathlib import Path
 from time import time
 
 from dask_gateway import GatewayCluster
@@ -16,8 +17,12 @@ from landsat_utils import (
 from utils import scale_to_int16, write_to_blob_storage
 
 CHUNKSIZE = 4096
-OUTPUT_VALUE_MULTIPLIER = 1000
+OUTPUT_VALUE_MULTIPLIER = 10000
 OUTPUT_NODATA = -32767
+
+# Delete to use copies in blob storage; these are stored locally on the PC
+# so they run a little faster
+STORAGE_AOI_PREFIX = Path('data')
 
 
 def normalized_ratio(band1: DataArray, band2: DataArray) -> DataArray:
@@ -25,33 +30,31 @@ def normalized_ratio(band1: DataArray, band2: DataArray) -> DataArray:
 
 
 def wofs(tm: DataArray) -> DataArray:
-    tm.ndi52 = normalized_ratio(tm.swir16, tm.green)
-    tm.ndi43 = normalized_ratio(tm.nir80, tm.red)
-    tm.ndi72 = normalized_ratio(tm.swir22, tm.green)
+    tm = tm.to_dataset('band')
+    tm['ndi52'] = normalized_ratio(tm.swir16, tm.green)
+    tm['ndi43'] = normalized_ratio(tm.nir08, tm.red)
+    tm['ndi72'] = normalized_ratio(tm.swir22, tm.green)
     l0 = tm.ndi52 <= -0.01
-    l3 = l0 & tm.blue <= 2083.5 & tm.swir22 <= 323.5
-    w1 = l0 & l3 & tm.ndi43 <= 0.61
-    l9 = ~l3 & tm.blue < 1400.5
-    w7 = ~l9 & tm.ndi43 <= -0.01
-    l12 = l9 & tm.ndi72 <= -0.23
-    w2 = l12 & tm.ndi43 <= 0.22
-    w3 = ~w2 & tm.blue <= 473.0
-    w4 = ~l12 & tm.blue <= 379.0
-    l2 = ~l0 & tm.ndi52 <= 0.23
-    w5 = l2 & tm.blue <= 334.5 & tm.ndi43 <= 0.54 & tm.ndi52 <= -0.12
-    l21 = ~w5 & tm.red <= 364.5
-    w6 = l21 & tm.blue <= 129.5
-    w8 = ~l21 & tm.blue <= 300.5
+    l3 = l0 & (tm.blue <= 2083.5) & (tm.swir22 <= 323.5)
+    w1 = l0 & l3 & (tm.ndi43 <= 0.61)
+    l9 = ~l3 & (tm.blue < 1400.5)
+    w7 = ~l9 & (tm.ndi43 <= -0.01)
+    l12 = l9 & (tm.ndi72 <= -0.23)
+    w2 = l12 & (tm.ndi43 <= 0.22)
+    w3 = ~w2 & (tm.blue <= 473.0)
+    w4 = ~l12 & (tm.blue <= 379.0)
+    l2 = ~l0 & (tm.ndi52 <= 0.23)
+    w5 = l2 & (tm.blue <= 334.5) & (tm.ndi43 <= 0.54) & (tm.ndi52 <= -0.12)
+    l21 = ~w5 & (tm.red <= 364.5)
+    w6 = l21 & (tm.blue <= 129.5)
+    w8 = ~l21 & (tm.blue <= 300.5)
     w9 = (
-        ~l2 & tm.ndi52
-        <= 0.32 & tm.blue
-        <= 249.5 & tm.ndi43
-        <= 0.45 & tm.red
-        <= 364.5 & tm.blue
-        <= 129.5
+        ~l2 & (tm.ndi52 <= 0.32) & 
+        (tm.blue <= 249.5) & (tm.ndi43 <= 0.45) & (tm.red <= 364.5) & (tm.blue <= 129.5)
     )
 
-    return w1 | w2 | w3 | w4 | w5 | w6 | w7 | w8 | w9
+    water = w1 | w2 | w3 | w4 | w5 | w6 | w7 | w8 | w9
+    return water.where(tm.red.notnull(), float("nan"))
 
 
 def process_wofs(year: int, output_prefix: str) -> None:
@@ -63,6 +66,8 @@ def process_wofs(year: int, output_prefix: str) -> None:
         last_time = time()
         path = row["PATH"]
         row = row["ROW"]
+        path = 93
+        row = 62
         these_areas = aoi_by_pathrow[
             (aoi_by_pathrow["PATH"] == path) & (aoi_by_pathrow["ROW"] == row)
         ]
@@ -106,8 +111,7 @@ def process_wofs(year: int, output_prefix: str) -> None:
         l1_rescale = 1.0 / l1_scale
         item_xr *= l1_rescale
 
-        results = wofs(item_xr).rio.write_crs(item_xr.rio.crs).reset_coords(drop=True)
-        breakpoint()
+        results = wofs(item_xr).mean("time").reset_coords(drop=True).rio.write_crs(item_xr.rio.crs)
 
         results = scale_to_int16(results, OUTPUT_VALUE_MULTIPLIER, OUTPUT_NODATA)
 
@@ -126,7 +130,7 @@ def process_wofs(year: int, output_prefix: str) -> None:
 
 if __name__ == "__main__":
     cluster = GatewayCluster(worker_cores=1, worker_memory=8)
-    cluster.scale(100)
+    cluster.scale(200)
     year = 2021
     prefix = f"wofs/{year}/wofs_{year}"
     with cluster.get_client() as client:

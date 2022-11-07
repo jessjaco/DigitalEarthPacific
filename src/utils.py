@@ -54,7 +54,7 @@ def write_to_blob_storage(
 
 import numpy as np
 import rioxarray
-def scale_to_int16(da: DataArray, output_multiplier: int, output_nodata: int) -> DataArray
+def scale_to_int16(da: DataArray, output_multiplier: int, output_nodata: int) -> DataArray:
     return (
         np.multiply(da, output_multiplier)
         .where(da.notnull(), output_nodata)

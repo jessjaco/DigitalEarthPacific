@@ -1,5 +1,6 @@
 from typing import Dict, List
 
+import geopandas as gpd
 import planetary_computer
 import pystac_client
 from pystac import ItemCollection
