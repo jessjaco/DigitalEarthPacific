@@ -2,6 +2,7 @@ from pathlib import Path
 from time import time
 
 from dask_gateway import GatewayCluster
+from dask.distributed import Client
 import geopandas as gpd
 from stackstac import stack
 from xarray import DataArray
@@ -14,7 +15,7 @@ from landsat_utils import (
     mask_clouds,
     item_collection_for_pathrow,
 )
-from utils import scale_to_int16, write_to_blob_storage
+from utils import scale_to_int16, write_to_blob_storage, bounds, mosaic_tiles
 
 CHUNKSIZE = 4096
 OUTPUT_VALUE_MULTIPLIER = 10000
@@ -30,30 +31,46 @@ def normalized_ratio(band1: DataArray, band2: DataArray) -> DataArray:
 
 
 def wofs(tm: DataArray) -> DataArray:
+    # lX indicates a left path from node X
+    # rX indicates a right
+    # dX is just the logic for _that_ node
     tm = tm.to_dataset('band')
     tm['ndi52'] = normalized_ratio(tm.swir16, tm.green)
     tm['ndi43'] = normalized_ratio(tm.nir08, tm.red)
     tm['ndi72'] = normalized_ratio(tm.swir22, tm.green)
-    l0 = tm.ndi52 <= -0.01
-    l3 = l0 & (tm.blue <= 2083.5) & (tm.swir22 <= 323.5)
-    w1 = l0 & l3 & (tm.ndi43 <= 0.61)
-    l9 = ~l3 & (tm.blue < 1400.5)
-    w7 = ~l9 & (tm.ndi43 <= -0.01)
-    l12 = l9 & (tm.ndi72 <= -0.23)
-    w2 = l12 & (tm.ndi43 <= 0.22)
-    w3 = ~w2 & (tm.blue <= 473.0)
-    w4 = ~l12 & (tm.blue <= 379.0)
-    l2 = ~l0 & (tm.ndi52 <= 0.23)
-    w5 = l2 & (tm.blue <= 334.5) & (tm.ndi43 <= 0.54) & (tm.ndi52 <= -0.12)
-    l21 = ~w5 & (tm.red <= 364.5)
-    w6 = l21 & (tm.blue <= 129.5)
-    w8 = ~l21 & (tm.blue <= 300.5)
-    w9 = (
-        ~l2 & (tm.ndi52 <= 0.32) & 
-        (tm.blue <= 249.5) & (tm.ndi43 <= 0.45) & (tm.red <= 364.5) & (tm.blue <= 129.5)
-    )
 
-    water = w1 | w2 | w3 | w4 | w5 | w6 | w7 | w8 | w9
+    d1 = tm.ndi52 <= -0.01
+    l2 = d1 & (tm.blue <= 2083.5)
+    d3 = tm.swir22 <= 323.5
+
+    l3 = l2 & d3
+    w1 = l3 & (tm.ndi43 <= 0.61)
+
+    r3 = l2 & ~d3
+    d5 = tm.blue <= 1400.5
+    d6 = tm.ndi72 <= -0.23
+    d7 = tm.ndi43 <= 0.22
+    w2 = r3 & d5 & d6 & d7
+    
+    w3 = r3 & d5 & d6 & ~d7 & (tm.blue <= 473.0)
+
+    w4 = r3 & d5 & ~d6 & (tm.blue <= 379.0)
+    w7 = r3 & ~d5 & (tm.ndi43 <= -0.01)
+
+    d11 = tm.ndi52 <= 0.23
+    l13 = ~d1 & d11 & (tm.blue <= 334.5) & (tm.ndi43 <= 0.54)
+    d14 = tm.ndi52 <= -0.12
+
+    w5 = l13 & d14
+    r14 = l13 & ~d14
+    d15 = tm.red <= 364.5
+
+    w6 = r14 & d15 & (tm.blue <= 129.5)
+    w8 = r14 & ~d15 & (tm.blue <= 300.5)
+
+    w10 = ~d1 & ~d11 & (tm.ndi52 <= 0.32) & (tm.blue <= 249.5) & (tm.ndi43 <= 0.45) & (tm.red <= 364.5) & (tm.blue <= 129.5)
+
+    water = w1 | w2 | w3 | w4 | w5 | w6 | w7 | w8 | w10
     return water.where(tm.red.notnull(), float("nan"))
 
 
@@ -66,8 +83,6 @@ def process_wofs(year: int, output_prefix: str) -> None:
         last_time = time()
         path = row["PATH"]
         row = row["ROW"]
-        path = 93
-        row = 62
         these_areas = aoi_by_pathrow[
             (aoi_by_pathrow["PATH"] == path) & (aoi_by_pathrow["ROW"] == row)
         ]
@@ -133,6 +148,11 @@ if __name__ == "__main__":
     cluster.scale(200)
     year = 2021
     prefix = f"wofs/{year}/wofs_{year}"
-    with cluster.get_client() as client:
-        print(client.dashboard_link)
-        process_wofs(year, prefix)
+#    with cluster.get_client() as client:
+#        print(client.dashboard_link)
+#        process_wofs(year, prefix)
+
+    bounds = bounds(STORAGE_AOI_PREFIX / "aoi.tif")
+    with Client() as local_client:
+        print(local_client.dashboard_link)
+        mosaic_tiles(prefix=prefix, bounds=bounds, client=local_client, scale_factor=1. / OUTPUT_VALUE_MULTIPLIER)
