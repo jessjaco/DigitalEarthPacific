@@ -1,7 +1,7 @@
 from pathlib import Path
 from time import time
 
-from dask_gateway import GatewayCluster
+# from dask_gateway import GatewayCluster
 from dask.distributed import Client
 import geopandas as gpd
 from stackstac import stack
@@ -9,6 +9,7 @@ from xarray import DataArray
 import xarray as xr
 
 from constants import STORAGE_AOI_PREFIX
+import fc
 from landsat_utils import (
     get_bbox,
     fix_bad_epsgs,
@@ -26,63 +27,7 @@ OUTPUT_NODATA = -32767
 STORAGE_AOI_PREFIX = Path("data")
 
 
-def normalized_ratio(band1: DataArray, band2: DataArray) -> DataArray:
-    return (band1 - band2) / (band1 + band2)
-
-
-def wofs(tm_da: DataArray) -> DataArray:
-    # lX indicates a left path from node X
-    # rX indicates a right
-    # dX is just the logic for _that_ node
-    tm = tm_da.to_dataset("band")
-    tm["ndi52"] = normalized_ratio(tm.swir16, tm.green)
-    tm["ndi43"] = normalized_ratio(tm.nir08, tm.red)
-    tm["ndi72"] = normalized_ratio(tm.swir22, tm.green)
-
-    d1 = tm.ndi52 <= -0.01
-    l2 = d1 & (tm.blue <= 2083.5)
-    d3 = tm.swir22 <= 323.5
-
-    l3 = l2 & d3
-    w1 = l3 & (tm.ndi43 <= 0.61)
-
-    r3 = l2 & ~d3
-    d5 = tm.blue <= 1400.5
-    d6 = tm.ndi72 <= -0.23
-    d7 = tm.ndi43 <= 0.22
-    w2 = r3 & d5 & d6 & d7
-
-    w3 = r3 & d5 & d6 & ~d7 & (tm.blue <= 473.0)
-
-    w4 = r3 & d5 & ~d6 & (tm.blue <= 379.0)
-    w7 = r3 & ~d5 & (tm.ndi43 <= -0.01)
-
-    d11 = tm.ndi52 <= 0.23
-    l13 = ~d1 & d11 & (tm.blue <= 334.5) & (tm.ndi43 <= 0.54)
-    d14 = tm.ndi52 <= -0.12
-
-    w5 = l13 & d14
-    r14 = l13 & ~d14
-    d15 = tm.red <= 364.5
-
-    w6 = r14 & d15 & (tm.blue <= 129.5)
-    w8 = r14 & ~d15 & (tm.blue <= 300.5)
-
-    w10 = (
-        ~d1
-        & ~d11
-        & (tm.ndi52 <= 0.32)
-        & (tm.blue <= 249.5)
-        & (tm.ndi43 <= 0.45)
-        & (tm.red <= 364.5)
-        & (tm.blue <= 129.5)
-    )
-
-    water = w1 | w2 | w3 | w4 | w5 | w6 | w7 | w8 | w10
-    return water.where(tm.red.notnull(), float("nan"))
-
-
-def wofs_by_scene(year: int, output_prefix: str) -> None:
+def fc_by_scene(year: int, output_prefix: str) -> None:
     pathrows = gpd.read_file(STORAGE_AOI_PREFIX / "pathrows_in_aoi.gpkg")
     aoi_by_pathrow = gpd.read_file(
         STORAGE_AOI_PREFIX / "aoi_split_by_landsat_pathrow.gpkg"
@@ -134,12 +79,15 @@ def wofs_by_scene(year: int, output_prefix: str) -> None:
         l1_rescale = 1.0 / l1_scale
         item_xr *= l1_rescale
 
-        results = (
-            wofs(item_xr)
-            .mean("time")
-            .reset_coords(drop=True)
-            .rio.write_crs(item_xr.rio.crs)
-        )
+        input_ds = item_xr.to_dataset("band")
+        breakpoint()
+        results = input_ds.map_blocks(fc.fractional_cover)
+        #        results = (
+        #            fc.fractional_cover(inpu
+        #            .mean("time")
+        #            .reset_coords(drop=True)
+        #            .rio.write_crs(item_xr.rio.crs)
+        #        )
 
         results = scale_to_int16(results, OUTPUT_VALUE_MULTIPLIER, OUTPUT_NODATA)
 

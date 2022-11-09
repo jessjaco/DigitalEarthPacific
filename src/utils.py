@@ -31,6 +31,7 @@ from typing import Dict, Union
 import azure.storage.blob
 from xarray import DataArray
 
+
 def write_to_blob_storage(
     xr: DataArray,
     path: Union[str, Path],
@@ -41,9 +42,9 @@ def write_to_blob_storage(
     credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"],
 ) -> None:
     container_client = azure.storage.blob.ContainerClient(
-            f"https://{storage_account}.blob.core.windows.net", 
-            container_name=container_name, 
-            credential=credential,
+        f"https://{storage_account}.blob.core.windows.net",
+        container_name=container_name,
+        credential=credential,
     )
 
     with io.BytesIO() as buffer:
@@ -55,7 +56,11 @@ def write_to_blob_storage(
 
 import numpy as np
 import rioxarray
-def scale_to_int16(da: DataArray, output_multiplier: int, output_nodata: int) -> DataArray:
+
+
+def scale_to_int16(
+    da: DataArray, output_multiplier: int, output_nodata: int
+) -> DataArray:
     return (
         np.multiply(da, output_multiplier)
         .where(da.notnull(), output_nodata)
@@ -65,14 +70,16 @@ def scale_to_int16(da: DataArray, output_multiplier: int, output_nodata: int) ->
     )
 
 
-def bounds(raster_path: Path) -> List:
+def raster_bounds(raster_path: Path) -> List:
     with rasterio.open(raster_path) as t:
         return list(t.bounds)
+
 
 from dask.distributed import Client, Lock
 from osgeo import gdal
 
-def mosaic_tiles(
+
+def mosaic_files(
     prefix: str,
     bounds: List,
     client: Client,
