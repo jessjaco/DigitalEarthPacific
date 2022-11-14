@@ -1,15 +1,16 @@
 from pathlib import Path
 from time import time
 
-# from dask_gateway import GatewayCluster
+from dask_gateway import GatewayCluster
 from dask.distributed import Client
 import geopandas as gpd
+import rioxarray
 from stackstac import stack
 from xarray import DataArray
 import xarray as xr
 
 from constants import STORAGE_AOI_PREFIX
-import fc
+from fc.fc.fractional_cover import fractional_cover
 from landsat_utils import (
     get_bbox,
     fix_bad_epsgs,
@@ -18,7 +19,7 @@ from landsat_utils import (
 )
 from utils import scale_to_int16, write_to_blob_storage, raster_bounds, mosaic_files
 
-CHUNKSIZE = 4096
+CHUNKSIZE = 2048
 OUTPUT_VALUE_MULTIPLIER = 10000
 OUTPUT_NODATA = -32767
 
@@ -79,9 +80,25 @@ def fc_by_scene(year: int, output_prefix: str) -> None:
         l1_rescale = 1.0 / l1_scale
         item_xr *= l1_rescale
 
-        input_ds = item_xr.to_dataset("band")
-        breakpoint()
-        results = input_ds.map_blocks(fc.fractional_cover)
+        input_ds = (
+            item_xr.to_dataset("band")[['red', 'blue', 'green', 'nir08', 'swir16', 'swir22']]
+            .rename(dict(swir16='swir1', swir22='swir2', nir08='nir'))
+            .isel(time=0)
+            .where(lambda x: x > 0)
+        )
+
+        for data_var in input_ds.data_vars.keys():
+            input_ds[data_var].attrs["nodata"] = float("nan")
+        # results = input_ds.map_blocks(fractional_cover, template=input_ds)
+        results = fractional_cover(input_ds).rio.write_crs('EPSG:8859')
+        
+        # This is for gdal
+        for data_var in results.data_vars.keys():
+            results[data_var] = results[data_var].astype('uint8').rio.write_nodata(255)
+        del results.attrs['grid_mapping']
+        #.astype('uint8').rio.write_nodata(255).rio.write_crs('EPSG:8859')
+        
+
         #        results = (
         #            fc.fractional_cover(inpu
         #            .mean("time")
@@ -89,7 +106,7 @@ def fc_by_scene(year: int, output_prefix: str) -> None:
         #            .rio.write_crs(item_xr.rio.crs)
         #        )
 
-        results = scale_to_int16(results, OUTPUT_VALUE_MULTIPLIER, OUTPUT_NODATA)
+#        results = scale_to_int16(results, OUTPUT_VALUE_MULTIPLIER, OUTPUT_NODATA)
 
         try:
             write_to_blob_storage(
@@ -108,10 +125,12 @@ if __name__ == "__main__":
     cluster = GatewayCluster(worker_cores=1, worker_memory=8)
     cluster.scale(200)
     year = 2021
-    prefix = f"wofs/{year}/wofs_{year}"
-    with cluster.get_client() as client:
+    prefix = f"fc/{year}/fc_{year}"
+# Code works with local client, but not on gateway
+#    with cluster.get_client() as client:
+    with Client() as client:
         print(client.dashboard_link)
-        wofs_by_scene(year, prefix)
+        fc_by_scene(year, prefix)
 
     bounds = raster_bounds(STORAGE_AOI_PREFIX / "aoi.tif")
     with Client() as local_client:

@@ -1,3 +1,6 @@
 [submodule "src/fc"]
 	path = src/fc
 	url = git@github.com:GeoscienceAustralia/fc.git
+[submodule "notebooks/PlanetaryComputerExamples"]
+	path = notebooks/PlanetaryComputerExamples
+	url = git@github.com:microsoft/PlanetaryComputerExamples.git
