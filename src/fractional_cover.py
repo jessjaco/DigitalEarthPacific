@@ -126,9 +126,10 @@ if __name__ == "__main__":
     cluster.scale(200)
     year = 2021
     prefix = f"fc/{year}/fc_{year}"
+    from dask.distributed import performance_report
 # Code works with local client, but not on gateway
-#    with cluster.get_client() as client:
-    with Client() as client:
+    with cluster.get_client() as client:
+#    with Client() as client:
         print(client.dashboard_link)
         fc_by_scene(year, prefix)
 
