@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title></title>
+   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+     integrity="sha256-kLaT2GOSpHechhsozzB+flnD+zUyjE2LlfWPgU04xyI="
+     crossorigin=""/>
+ <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"
+     integrity="sha256-WBkoXOwTeyKclOHuWtc+i2uENFpDZ9YPdf5Hf+D7ewM="
+     crossorigin=""></script>
+<style>
+body {
+  margin: 0;
+}
+#map {
+  height: 100vh;
+  width: 100vw;
+}
+
+</style>
+</head>
+<body>
+  <div id="map"></div>
+  
+</body>
+ <script> 
+  var map = L.map('map').setView([-10, -180], 5);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 13,
+    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+  L.tileLayer('https://deppcpublicstorage.blob.core.windows.net/output/tiles/evi_2018/{z}/{x}/{y}.png', {
+    tms: 1,
+    maxZoom: 13,
+    maxNativeZoom: 11,
+    tileSize: 512
+  }).addTo(map);
+ </script>
+</html>

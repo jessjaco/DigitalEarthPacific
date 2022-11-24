@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title></title>
+<script src='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js'></script>
+<link href='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css' rel='stylesheet' />
+<style>
+body { margin: 0;}
+#map {
+  height: 100vh;
+  width: 100vw;
+}
+</style>
+</head>
+
+<body>
+  <div id="map">
+  </div>
+  
+
+</body>
+<script>
+  const basestyle = {
+    "version": 8,
+    "sources": {
+      "osm": {
+        "type": "raster",
+        "tiles": ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        "tileSize": 256,
+        "attribution": "&copy; OpenStreetMap Contributors",
+        "maxzoom": 19
+      }
+    },
+    "layers": [
+      {
+        "id": "osm",
+        "type": "raster",
+        "source": "osm" // This must match the source key above
+      }
+    ]
+  };
+
+  const years = ['2018'];
+
+  var Map = new maplibregl.Map({
+    container: 'map',
+    style: basestyle,
+    center: [-180, -10], // starting position [lng, lat]
+    zoom: 4 // starting zoom
+  });
+
+  Map.on('load', () => {
+    years.forEach((year) => {
+      const id = `evi_${year}`;
+      Map.addSource(id, {
+        scheme: 'tms',
+        type: 'raster',
+        tiles: [`https://deppcpublicstorage.blob.core.windows.net/output/tiles/${id}/{z}/{x}/{y}.png`],
+        tileSize: 512,
+        maxzoom: 11
+      });
+      Map.addLayer({
+        id: id,
+        source: id,
+        type: "raster"
+      });
+    });
+});
+</script>
+</html>
