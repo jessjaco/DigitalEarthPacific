@@ -17,7 +17,7 @@ from xarray import DataArray
 import xrspatial.multispectral
 
 from constants import STORAGE_AOI_PREFIX
-from utils import scale_to_int16, write_to_blob_storage
+from utils import build_vrt, create_tiles, mosaic_files, raster_bounds, scale_to_int16, write_to_blob_storage
 from landsat_utils import (
     fix_bad_epsgs,
     get_bbox,
@@ -96,8 +96,8 @@ def process_by_scene(function: Callable, year: int, output_prefix: str) -> None:
 
         results = (
             function(annual_medians)
-            .rio.write_crs(item_xr.rio.crs)
             .reset_coords(drop=True)
+            .rio.write_crs(item_xr.rio.crs)
         )
 
         results = scale_to_int16(results, OUTPUT_VALUE_MULTIPLIER, OUTPUT_NODATA)
@@ -114,52 +114,29 @@ def process_by_scene(function: Callable, year: int, output_prefix: str) -> None:
             f"{path:03d}-{row:03d} | {(i+1):03d}/{len(pathrows.index)} | {round(time() - last_time)}s"
         )
 
-
-def mosaic_tiles(
-    prefix: str,
-    client: Client,
-    storage_account: str = os.environ["AZURE_STORAGE_ACCOUNT"],
-    credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"],
-    container_name: str = "output",
-) -> None:
-    container_client = azure.storage.blob.ContainerClient(
-        f"https://{storage_account}.blob.core.windows.net",
-        container_name=container_name,
-        credential=credential,
-    )
-    blobs = [
-        f"/vsiaz/{container_name}/{blob.name}"
-        for blob in container_client.list_blobs()
-        if blob.name.startswith(prefix)
-    ]
-
-    with rasterio.open(STORAGE_AOI_PREFIX / "aoi.tif") as t:
-        bounds = list(t.bounds)
-
-    local_prefix = Path(prefix).stem
-    vrt_file = f"data/{local_prefix}.vrt"
-    gdal.BuildVRT(vrt_file, blobs, outputBounds=bounds)
-    mosaic_file = f"data/{local_prefix}.tif"
-
-    rx.open_rasterio(vrt_file, chunks=True).rio.to_raster(
-        mosaic_file, compress="LZW", predictor=2, lock=Lock("rio", client=client)
-    )
-
-    with rasterio.open(mosaic_file, "r+") as dst:
-        dst.scales = OUTPUT_SCALE_FACTOR
-
-
+    
 if __name__ == "__main__":
-    cluster = GatewayCluster(worker_cores=1, worker_memory=8)
-    cluster.scale(200)
+    years = list(range(2021, 2019, -1))
+#    cluster = GatewayCluster(worker_cores=1, worker_memory=8)
+#    cluster.scale(400)
     function_name = "evi"
-    function = globals()[function_name]
-    year = 2021
-    prefix = f"{function_name}/{year}/{function_name}_{year}"
-    with cluster.get_client() as client:
-        print(client.dashboard_link)
-        process_by_scene(function, year, prefix)
+#    function = globals()[function_name]
+#        with cluster.get_client() as client:
+#            for year in years:
+#                prefix = f"{function_name}/{year}/{function_name}_{year}"
+#                print(client.dashboard_link)
+#                process_by_scene(function, year, prefix)
+    bounds = raster_bounds(STORAGE_AOI_PREFIX / "aoi.tif")
+    for year in years:
+        print(year)
+        prefix = f"{function_name}/{year}/{function_name}_{year}"
+        create_tiles("data/evi_col_int.txt", prefix, bounds)
 
-    with Client() as local_client:
-        print(local_client.dashboard_link)
-        mosaic_tiles(prefix=prefix, client=client)
+#    with Client() as local_client:
+#        print(local_client.dashboard_link)
+#        mosaic_files(
+#            prefix=prefix,
+#            bounds=bounds,
+#            client=local_client,
+#            scale_factor=1.0 / OUTPUT_VALUE_MULTIPLIER,
+#        )

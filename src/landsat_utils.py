@@ -16,8 +16,7 @@ def mask_clouds(xr: DataArray) -> DataArray:
         bitmask |= 1 << field
 
     qa = xr.sel(band="qa_pixel").astype("uint16")
-    bad = qa & bitmask  # just look at those 4 bits
-    return xr.where(bad == 0)
+    return xr.where(qa & bitmask == 0)
 
 
 def item_collection_for_pathrow(
