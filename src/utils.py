@@ -78,11 +78,12 @@ def raster_bounds(raster_path: Path) -> List:
 from dask.distributed import Client, Lock
 from osgeo import gdal
 
+
 def build_vrt(
     prefix: str,
     bounds: List,
     storage_account: str = os.environ["AZURE_STORAGE_ACCOUNT"],
-    credential: str =  os.environ["AZURE_STORAGE_SAS_TOKEN"],
+    credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"],
     container_name: str = "output",
 ) -> Path:
     container_client = azure.storage.blob.ContainerClient(
@@ -101,41 +102,80 @@ def build_vrt(
     gdal.BuildVRT(vrt_file, blobs, outputBounds=bounds)
     return Path(vrt_file)
 
+
 import os
 import osgeo_utils.gdal2tiles
 from tqdm import tqdm
+
 
 def create_tiles(
     color_file: str,
     prefix: str,
     bounds: List,
+    remake_mosaic: bool = True,
     storage_account: str = os.environ["AZURE_STORAGE_ACCOUNT"],
     credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"],
-    container_name: str = "output"
+    container_name: str = "output",
 ):
-    vrt_file = build_vrt(prefix, bounds, storage_account, credential, container_name)
+    if remake_mosaic:
+        with Client() as local_client:
+            mosaic_files(
+                prefix=prefix,
+                bounds=bounds,
+                client=local_client,
+                storage_account=storage_account,
+                credential=credential,
+                container_name=container_name,
+                scale_factor=1.0 / 1000,
+                overwrite=remake_mosaic,
+            )
     dst_vrt_file = f"data/{Path(prefix).stem}_rgb.vrt"
-    gdal.DEMProcessing(dst_vrt_file, str(vrt_file), "color-relief", colorFilename=color_file, addAlpha=True)
+    gdal.DEMProcessing(
+        dst_vrt_file,
+        str(_mosaic_file(prefix)),
+        "color-relief",
+        colorFilename=color_file,
+        addAlpha=True,
+    )
     dst_name = f"data/tiles/{prefix}"
     os.makedirs(dst_name, exist_ok=True)
     max_zoom = 11
     # First arg is just a dummy so the second arg is not removed (see gdal2tiles code)
-    osgeo_utils.gdal2tiles.main(["gdal2tiles.py", "--tilesize=512", "--processes=4", f"--zoom=0-{max_zoom}", "-x", dst_vrt_file, dst_name])
-    
+    # I'm using 512 x 512 tiles so there's fewer files to copy over
+    osgeo_utils.gdal2tiles.main(
+        [
+            "gdal2tiles.py",
+            "--tilesize=512",
+            "--processes=4",
+            f"--zoom=0-{max_zoom}",
+            "-x",
+            dst_vrt_file,
+            dst_name,
+        ]
+    )
+
     container_client = azure.storage.blob.ContainerClient(
         f"https://{storage_account}.blob.core.windows.net",
         container_name=container_name,
         credential=credential,
     )
-    
-    for local_path in tqdm(Path(dst_name).rglob('*')):
+
+    for local_path in tqdm(Path(dst_name).rglob("*")):
         if local_path.is_file():
-            with open(local_path, 'rb') as src:
-                remote_path = Path('tiles') / '/'.join(local_path.parts[4:])
+            with open(local_path, "rb") as src:
+                remote_path = Path("tiles") / "/".join(local_path.parts[4:])
                 blob_client = container_client.get_blob_client(str(remote_path))
                 blob_client.upload_blob(src, overwrite=True)
                 local_path.unlink()
-        
+
+
+def _local_prefix(prefix: str) -> str:
+    return Path(prefix).stem
+
+
+def _mosaic_file(prefix: str) -> str:
+    return f"data/{_local_prefix(prefix)}.tif"
+
 
 def mosaic_files(
     prefix: str,
@@ -145,16 +185,22 @@ def mosaic_files(
     credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"],
     container_name: str = "output",
     scale_factor: float = None,
+    overwrite: bool = True,
 ) -> None:
 
-    vrt_file = build_vrt(prefix, bounds, storage_account, credential, container_name)
-    local_prefix = Path(prefix).stem
-    vrt_file = f"data/{local_prefix}.vrt"
-    mosaic_file = f"data/{local_prefix}.tif"
-    rioxarray.open_rasterio(vrt_file, chunks=True).rio.to_raster(
-        mosaic_file, compress="LZW", predictor=2, lock=Lock("rio", client=client)
-    )
+    mosaic_file = _mosaic_file(prefix)
+    if not Path(mosaic_file).is_file() or overwrite:
+        vrt_file = build_vrt(
+            prefix, bounds, storage_account, credential, container_name
+        )
+        vrt_file = f"data/{_local_prefix(prefix)}.vrt"
+        rioxarray.open_rasterio(vrt_file, chunks=True).rio.to_raster(
+            _mosaic_file(prefix),
+            compress="LZW",
+            predictor=2,
+            lock=Lock("rio", client=client),
+        )
 
-    if scale_factor is not None:
-        with rasterio.open(mosaic_file, "r+") as dst:
-            dst.scales = (scale_factor,)
+        if scale_factor is not None:
+            with rasterio.open(mosaic_file, "r+") as dst:
+                dst.scales = (scale_factor,)

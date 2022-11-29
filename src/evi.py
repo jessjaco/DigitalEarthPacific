@@ -2,6 +2,7 @@ import json
 import io
 import os
 from pathlib import Path
+import re
 from time import time
 from typing import Callable
 
@@ -13,11 +14,18 @@ from osgeo import gdal
 import rasterio
 import rioxarray as rx
 from stackstac import stack
+import typer
 from xarray import DataArray
 import xrspatial.multispectral
 
 from constants import STORAGE_AOI_PREFIX
-from utils import build_vrt, create_tiles, mosaic_files, raster_bounds, scale_to_int16, write_to_blob_storage
+from utils import (
+    create_tiles,
+    mosaic_files,
+    raster_bounds,
+    scale_to_int16,
+    write_to_blob_storage,
+)
 from landsat_utils import (
     fix_bad_epsgs,
     get_bbox,
@@ -114,29 +122,59 @@ def process_by_scene(function: Callable, year: int, output_prefix: str) -> None:
             f"{path:03d}-{row:03d} | {(i+1):03d}/{len(pathrows.index)} | {round(time() - last_time)}s"
         )
 
-    
-if __name__ == "__main__":
-    years = list(range(2021, 2019, -1))
-#    cluster = GatewayCluster(worker_cores=1, worker_memory=8)
-#    cluster.scale(400)
-    function_name = "evi"
-#    function = globals()[function_name]
-#        with cluster.get_client() as client:
-#            for year in years:
-#                prefix = f"{function_name}/{year}/{function_name}_{year}"
-#                print(client.dashboard_link)
-#                process_by_scene(function, year, prefix)
-    bounds = raster_bounds(STORAGE_AOI_PREFIX / "aoi.tif")
-    for year in years:
-        print(year)
-        prefix = f"{function_name}/{year}/{function_name}_{year}"
-        create_tiles("data/evi_col_int.txt", prefix, bounds)
 
-#    with Client() as local_client:
-#        print(local_client.dashboard_link)
-#        mosaic_files(
-#            prefix=prefix,
-#            bounds=bounds,
-#            client=local_client,
-#            scale_factor=1.0 / OUTPUT_VALUE_MULTIPLIER,
-#        )
+def _get_prefix(year: int) -> str:
+    return f"evi/{year}/evi_{year}"
+
+
+def process_scenes(year: int) -> None:
+    cluster = GatewayCluster(worker_cores=1, worker_memory=8)
+    cluster.scale(400)
+    with cluster.get_client() as client:
+        process_by_scene(evi, year, _get_prefix(year))
+
+
+def mosaic_scenes(year: int) -> None:
+    bounds = raster_bounds(STORAGE_AOI_PREFIX / "aoi.tif")
+    with Client() as local_client:
+        mosaic_files(
+            prefix=_get_prefix(year),
+            bounds=bounds,
+            client=local_client,
+            scale_factor=1.0 / OUTPUT_VALUE_MULTIPLIER,
+        )
+
+
+def make_tiles(year: int, remake_mosaic: bool = True) -> None:
+    bounds = raster_bounds(STORAGE_AOI_PREFIX / "aoi.tif")
+    create_tiles(
+        Path(__file__).with_name("evi_color_ramp.txt").as_posix(),
+        _get_prefix(year),
+        bounds,
+        remake_mosaic=remake_mosaic,
+    )
+
+
+def main(
+    year: int,
+    run_scenes: bool = False,
+    mosaic: bool = False,
+    tile: bool = False,
+    remake_mosaic_for_tiles: bool = True,
+):
+    if run_scenes:
+        process_scenes(year)
+
+    if mosaic:
+        mosaic_scenes(year)
+
+    if tile:
+        make_tiles(year, remake_mosaic_for_tiles)
+
+
+if __name__ == "__main__":
+    import os
+
+    os.makedirs("data", exist_ok=True)
+    typer.run(main)
+

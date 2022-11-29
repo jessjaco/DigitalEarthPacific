@@ -1,0 +1,12 @@
+name: "evi"
+command:
+  - "python"
+  - "evi.py"
+  - "2021"
+  - "--tile"
+image: "mcr.microsoft.com/planetary-computer/python:latest"
+code: "src/"
+env:
+  AZURE_STORAGE_ACCOUNT: "deppcpublicstorage"
+  AZURE_STORAGE_SAS_TOKEN: "sp=racwdlmeop&st=2022-10-24T18:35:53Z&se=2025-10-25T02:35:53Z&spr=https&sv=2021-06-08&sr=c&sig=uEfvbqZr7X3ULDlcN2QSzXA%2FoELWK6PzZ0zHDLRM6%2FA%3D"
+ 
