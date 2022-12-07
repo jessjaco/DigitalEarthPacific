@@ -11,16 +11,36 @@ body { margin: 0;}
   height: 100vh;
   width: 100vw;
 }
+
 </style>
 </head>
 
 <body>
   <div id="map">
+
   </div>
   
 
 </body>
 <script>
+
+  class SelectControl {
+    constructor(id) {
+      this.element = document.createElement("select");
+      this.element.className = "mapboxgl-ctrl";
+    }
+
+    onAdd(map) {
+      this._map = map;
+      return this.element;
+    }
+     
+    onRemove() {
+      this._container.parentNode.removeChild(this._container);
+      this._map = undefined;
+    }
+  }
+
   const basestyle = {
     "version": 8,
     "sources": {
@@ -41,7 +61,14 @@ body { margin: 0;}
     ]
   };
 
-  const years = ['2019'];
+  const years = ['2015', '2016', '2017', '2018', '2019', '2020', '2021'];
+
+  function makeVisible(id) {
+    years.forEach(year => {
+      visible = year === id ? "visible": "none";
+      Map.setLayoutProperty(`evi_${year}`, 'visibility', visible);
+    });
+  }
 
   var Map = new maplibregl.Map({
     container: 'map',
@@ -63,9 +90,26 @@ body { margin: 0;}
       Map.addLayer({
         id: id,
         source: id,
-        type: "raster"
+        type: "raster",
+        layout: {visibility: "none"}
       });
+
     });
-});
+    makeVisible('2015');
+
+
+    const selector = new SelectControl("selector");
+    selector.element.addEventListener('change', e => {
+      makeVisible(e.target.value);
+    }, false);
+    
+    years.forEach(year =>{ 
+      const option = document.createElement("option");
+      option.textContent = year;
+      option.value = year;
+      selector.element.appendChild(option);
+    });
+    Map.addControl(selector, 'top-left');
+  });
 </script>
 </html>

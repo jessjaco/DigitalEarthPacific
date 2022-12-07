@@ -21,14 +21,14 @@ import xrspatial.multispectral
 from constants import STORAGE_AOI_PREFIX
 from utils import (
     create_tiles,
-    mosaic_files,
+    get_bbox,
+    mosaic_scenes,
     raster_bounds,
     scale_to_int16,
     write_to_blob_storage,
 )
 from landsat_utils import (
     fix_bad_epsgs,
-    get_bbox,
     item_collection_for_pathrow,
     mask_clouds,
 )
@@ -177,4 +177,3 @@ if __name__ == "__main__":
 
     os.makedirs("data", exist_ok=True)
     typer.run(main)
-

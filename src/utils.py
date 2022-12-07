@@ -9,6 +9,12 @@ from geocube.api.core import make_geocube
 import rasterio
 
 
+def scale_and_offset(
+    da: xr.DataArray, scale: List[float] = [1], offset: float = 0
+) -> xr.DataArray:
+    return da * scale + offset
+
+
 def make_geocube_dask(
     df: gpd.GeoDataFrame, measurements: List[str], like: xr.DataArray, **kwargs
 ):
@@ -52,6 +58,24 @@ def write_to_blob_storage(
         buffer.seek(0)
         blob_client = container_client.get_blob_client(path)
         blob_client.upload_blob(buffer, overwrite=True)
+
+
+def copy_to_blob_storage(
+    local_path: Path,
+    remote_path: Path,
+    storage_account: str = os.environ["AZURE_STORAGE_ACCOUNT"],
+    credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"],
+    container_name: str = "output",
+) -> None:
+    container_client = azure.storage.blob.ContainerClient(
+        f"https://{storage_account}.blob.core.windows.net",
+        container_name=container_name,
+        credential=credential,
+    )
+
+    with open(local_path, "rb") as src:
+        blob_client = container_client.get_blob_client(str(remote_path))
+        blob_client.upload_blob(src, overwrite=True)
 
 
 import numpy as np
@@ -119,7 +143,7 @@ def create_tiles(
 ):
     if remake_mosaic:
         with Client() as local_client:
-            mosaic_files(
+            mosaic_scenes(
                 prefix=prefix,
                 bounds=bounds,
                 client=local_client,
@@ -141,7 +165,8 @@ def create_tiles(
     os.makedirs(dst_name, exist_ok=True)
     max_zoom = 11
     # First arg is just a dummy so the second arg is not removed (see gdal2tiles code)
-    # I'm using 512 x 512 tiles so there's fewer files to copy over
+    # I'm using 512 x 512 tiles so there's fewer files to copy over. likewise
+    # for -x
     osgeo_utils.gdal2tiles.main(
         [
             "gdal2tiles.py",
@@ -154,19 +179,13 @@ def create_tiles(
         ]
     )
 
-    container_client = azure.storage.blob.ContainerClient(
-        f"https://{storage_account}.blob.core.windows.net",
-        container_name=container_name,
-        credential=credential,
-    )
-
     for local_path in tqdm(Path(dst_name).rglob("*")):
         if local_path.is_file():
-            with open(local_path, "rb") as src:
-                remote_path = Path("tiles") / "/".join(local_path.parts[4:])
-                blob_client = container_client.get_blob_client(str(remote_path))
-                blob_client.upload_blob(src, overwrite=True)
-                local_path.unlink()
+            remote_path = Path("tiles") / "/".join(local_path.parts[4:])
+            copy_to_blob_storage(
+                local_path, remote_path, storage_account, credential, container_name
+            )
+            local_path.unlink()
 
 
 def _local_prefix(prefix: str) -> str:
@@ -177,7 +196,7 @@ def _mosaic_file(prefix: str) -> str:
     return f"data/{_local_prefix(prefix)}.tif"
 
 
-def mosaic_files(
+def mosaic_scenes(
     prefix: str,
     bounds: List,
     client: Client,
@@ -195,7 +214,7 @@ def mosaic_files(
         )
         vrt_file = f"data/{_local_prefix(prefix)}.vrt"
         rioxarray.open_rasterio(vrt_file, chunks=True).rio.to_raster(
-            _mosaic_file(prefix),
+            mosaic_file,
             compress="LZW",
             predictor=2,
             lock=Lock("rio", client=client),
@@ -204,3 +223,14 @@ def mosaic_files(
         if scale_factor is not None:
             with rasterio.open(mosaic_file, "r+") as dst:
                 dst.scales = (scale_factor,)
+
+
+def get_bbox(gpdf: gpd.GeoDataFrame) -> List[float]:
+    bbox = gpdf.to_crs("EPSG:4326").bounds.values[0]
+    # Or the opposite!
+    bbox_crosses_antimeridian = bbox[0] < 0 and bbox[2] > 0
+    if bbox_crosses_antimeridian:
+        # This may be overkill, but nothing else was really working
+        bbox[0] = -179.9999999999
+        bbox[2] = 179.9999999999
+    return bbox

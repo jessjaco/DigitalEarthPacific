@@ -45,14 +45,3 @@ def fix_bad_epsgs(item_collection: ItemCollection) -> None:
     for item in item_collection:
         epsg = str(item.properties["proj:epsg"])
         item.properties["proj:epsg"] = int(f"{epsg[0:3]}{int(epsg[3:]):02d}")
-
-
-def get_bbox(gpdf: gpd.GeoDataFrame) -> List[float]:
-    bbox = gpdf.to_crs("EPSG:4326").bounds.values[0]
-    # Or the opposite!
-    bbox_crosses_antimeridian = bbox[0] < 0 and bbox[2] > 0
-    if bbox_crosses_antimeridian:
-        # This may be overkill, but nothing else was really working
-        bbox[0] = -179.9999999999
-        bbox[2] = 179.9999999999
-    return bbox

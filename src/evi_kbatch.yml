@@ -2,7 +2,7 @@ name: "evi"
 command:
   - "python"
   - "evi.py"
-  - "2021"
+  - "2015"
   - "--tile"
 image: "mcr.microsoft.com/planetary-computer/python:latest"
 code: "src/"
