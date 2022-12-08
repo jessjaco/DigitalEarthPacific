@@ -61,7 +61,7 @@ class Processor:
         print(f"{path:03d}-{row:03d} | ** NO ITEMS **")
 
     def get_stack(
-        self, item_collection: ItemCollection, these_areas: gpd.GeoDataFrame
+        self, item_collection: ItemCollection, these_areas: GeoDataFrame
     ) -> DataArray:
         return (
             stack(

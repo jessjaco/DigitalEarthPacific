@@ -24,7 +24,7 @@ def evi(xr: DataArray) -> DataArray:
 
 
 def evi_for_year(item_xr: DataArray) -> None:
-    item_xr = scale_and_offset(item_xr, scale = 0.0000275 offset = -0.2)
+    item_xr = scale_and_offset(item_xr, scale = 0.0000275, offset = -0.2)
     annual_medians = (
         item_xr.resample(time="Y").median("time").squeeze("time", drop=True)
     )
