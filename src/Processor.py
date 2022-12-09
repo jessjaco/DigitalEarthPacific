@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import io
 import os
 from pathlib import Path
-from typing import Dict, Union, Callable
+from typing import Any, Dict, Union, Callable
 
 from azure.storage.blob import ContainerClient
 from dask.distributed import Client, Lock
@@ -27,6 +27,7 @@ from utils import get_bbox, raster_bounds, scale_to_int16, write_to_blob_storage
 class Processor:
     year: int
     scene_processor: Callable
+    dataset_id: str
     storage_account: str = os.environ["AZURE_STORAGE_ACCOUNT"]
     container_name: str = "output"
     credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"]
@@ -191,8 +192,11 @@ def run_processor(
     mosaic: bool = False,
     tile: bool = False,
     remake_mosaic_for_tiles: bool = True,
+    **kwargs,
 ):
-    processor = Processor(year, scene_processor, color_ramp_file=color_ramp_file)
+    processor = Processor(
+        year, scene_processor, color_ramp_file=color_ramp_file, **kwargs
+    )
     if run_scenes:
         cluster = GatewayCluster(worker_cores=1, worker_memory=8)
         cluster.scale(400)

@@ -1,16 +1,10 @@
 from pathlib import Path
-from typing import Callable
 
 from xarray import DataArray
 import xrspatial.multispectral
 
 from Processor import run_processor
 from utils import scale_and_offset
-
-OUTPUT_VALUE_MULTIPLIER = 1000
-OUTPUT_NODATA = -32767
-OUTPUT_SCALE_FACTOR = [1.0 / OUTPUT_VALUE_MULTIPLIER]
-OUTPUT_NODATA = -32767
 
 
 def evi(xr: DataArray) -> DataArray:
@@ -24,13 +18,12 @@ def evi(xr: DataArray) -> DataArray:
 
 
 def evi_for_year(item_xr: DataArray) -> None:
-    item_xr = scale_and_offset(item_xr, scale = 0.0000275, offset = -0.2)
+    item_xr = scale_and_offset(item_xr, scale=0.0000275, offset=-0.2)
     annual_medians = (
         item_xr.resample(time="Y").median("time").squeeze("time", drop=True)
     )
 
     return evi(annual_medians).reset_coords(drop=True).rio.write_crs(item_xr.rio.crs)
-
 
 
 if __name__ == "__main__":
@@ -51,6 +44,7 @@ if __name__ == "__main__":
     run_processor(
         year=args.year,
         scene_processor=evi_for_year,
+        dataset_id="evi",
         color_ramp_file=color_ramp_file,
         run_scenes=args.run_scenes,
         mosaic=args.mosaic,
