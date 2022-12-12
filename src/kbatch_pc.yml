@@ -4,6 +4,6 @@
 # 1. escaping of quotes for keys
 # 2. space after -e and -f (but not command?) 
 
-name: "evi"
+profile: python
 image: "mcr.microsoft.com/planetary-computer/python:latest"
 code: "src/"

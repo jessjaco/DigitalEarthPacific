@@ -45,7 +45,7 @@ class Processor:
             container_name=self.container_name,
             credential=self.credential,
         )
-        self.prefix = f"evi/{self.year}/evi_{self.year}"
+        self.prefix = f"{self.dataset_id}/{self.year}/evi_{self.year}"
         self.bounds = raster_bounds(self.aoi_file)
         self.local_prefix = Path(self.prefix).stem
         self.mosaic_file = f"data/{self.local_prefix}.tif"
@@ -201,6 +201,8 @@ def run_processor(
         cluster = GatewayCluster(worker_cores=1, worker_memory=8)
         cluster.scale(400)
         with cluster.get_client() as client:
+            print(client.dashboard_link)
+            print(f"nworkers: {len(client.ncores().values())}")
             processor.process_by_scene()
 
     if mosaic:
