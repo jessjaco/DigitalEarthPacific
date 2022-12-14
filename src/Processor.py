@@ -20,7 +20,13 @@ from xarray import DataArray
 
 from constants import STORAGE_AOI_PREFIX
 from landsat_utils import item_collection_for_pathrow, mask_clouds
-from utils import get_bbox, raster_bounds, scale_to_int16, write_to_blob_storage
+from utils import (
+    gpdf_bounds,
+    raster_bounds,
+    scale_to_int16,
+    write_to_blob_storage,
+    scale_and_offset,
+)
 
 
 @dataclass
@@ -45,7 +51,7 @@ class Processor:
             container_name=self.container_name,
             credential=self.credential,
         )
-        self.prefix = f"{self.dataset_id}/{self.year}/evi_{self.year}"
+        self.prefix = f"{self.dataset_id}/{self.year}/{self.dataset_id}_{self.year}"
         self.bounds = raster_bounds(self.aoi_file)
         self.local_prefix = Path(self.prefix).stem
         self.mosaic_file = f"data/{self.local_prefix}.tif"
@@ -57,9 +63,6 @@ class Processor:
         return self.aoi_by_pathrow[
             (self.aoi_by_pathrow["PATH"] == path) & (self.aoi_by_pathrow["ROW"] == row)
         ]
-
-    def log_no_items(self, path: str, row: str) -> None:
-        print(f"{path:03d}-{row:03d} | ** NO ITEMS **")
 
     def get_stack(
         self, item_collection: ItemCollection, these_areas: GeoDataFrame
@@ -88,16 +91,19 @@ class Processor:
                 dict(
                     collections=["landsat-c2-l2"],
                     datetime=str(self.year),
-                    bbox=get_bbox(these_areas),
+                    bbox=gpdf_bounds(these_areas),
                 ),
             )
 
             if len(item_collection) == 0:
-                self.log_no_items(path, row)
+                print(f"{path:03d}-{row:03d} | ** NO ITEMS **")
                 continue
 
             item_xr = self.get_stack(item_collection, these_areas)
             item_xr = mask_clouds(item_xr)
+            scale = 0.0000275
+            offset = -0.2
+            item_xr = scale_and_offset(landsat_xr, scale=[scale], offset=offset)
 
             results = self.scene_processor(item_xr)
             results = scale_to_int16(
@@ -128,8 +134,7 @@ class Processor:
             if blob.name.startswith(self.prefix)
         ]
 
-        local_prefix = Path(self.prefix).stem
-        vrt_file = f"data/{local_prefix}.vrt"
+        vrt_file = f"data/{self.local_prefix}.vrt"
         gdal.BuildVRT(vrt_file, blobs, outputBounds=self.bounds)
         return Path(vrt_file)
 

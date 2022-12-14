@@ -1,23 +1,34 @@
-from functools import partial
+import io
+import os
 from pathlib import Path
-from typing import Callable, Optional, List
+from typing import Dict, List, Union
 
-import xarray as xr
+import azure.storage.blob
+from dask.distributed import Client, Lock
 import geopandas as gpd
-import geocube
 from geocube.api.core import make_geocube
+import numpy as np
+from osgeo import gdal
+import osgeo_utils.gdal2tiles
 import rasterio
+import rioxarray
+from tqdm import tqdm
+import xarray as xr
+from xarray import DataArray
 
 
 def scale_and_offset(
     da: xr.DataArray, scale: List[float] = [1], offset: float = 0
 ) -> xr.DataArray:
+    """Apply the given scale and offset to the given DataArray"""
     return da * scale + offset
 
 
 def make_geocube_dask(
     df: gpd.GeoDataFrame, measurements: List[str], like: xr.DataArray, **kwargs
 ):
+    """Dask-enabled geocube.make_geocube. Not completely implemented."""
+
     def rasterize_block(block):
         return (
             make_geocube(df, measurements=measurements, like=block, **kwargs)
@@ -27,15 +38,6 @@ def make_geocube_dask(
 
     like = like.rename(dict(zip(["band"], measurements)))
     return like.map_blocks(rasterize_block, template=like)
-
-
-import io
-import os
-from pathlib import Path
-from typing import Dict, Union
-
-import azure.storage.blob
-from xarray import DataArray
 
 
 def write_to_blob_storage(
@@ -78,13 +80,11 @@ def copy_to_blob_storage(
         blob_client.upload_blob(src, overwrite=True)
 
 
-import numpy as np
-import rioxarray
-
-
 def scale_to_int16(
     da: DataArray, output_multiplier: int, output_nodata: int
 ) -> DataArray:
+    """Multiply the given DataArray by the given multiplier and convert to
+    int16 data type, with the given nodata value"""
     return (
         np.multiply(da, output_multiplier)
         .where(da.notnull(), output_nodata)
@@ -95,12 +95,22 @@ def scale_to_int16(
 
 
 def raster_bounds(raster_path: Path) -> List:
+    """Returns the bounds for a raster file at the given path"""
     with rasterio.open(raster_path) as t:
         return list(t.bounds)
 
 
-from dask.distributed import Client, Lock
-from osgeo import gdal
+def gpdf_bounds(gpdf: gpd.GeoDataFrame) -> List[float]:
+    """Returns the bounds for the give GeoDataFrame, and makes sure
+    it doesn't cross the antimeridian."""
+    bbox = gpdf.to_crs("EPSG:4326").bounds.values[0]
+    # Or the opposite!
+    bbox_crosses_antimeridian = bbox[0] < 0 and bbox[2] > 0
+    if bbox_crosses_antimeridian:
+        # This may be overkill, but nothing else was really working
+        bbox[0] = -179.9999999999
+        bbox[2] = 179.9999999999
+    return bbox
 
 
 def build_vrt(
@@ -125,11 +135,6 @@ def build_vrt(
     vrt_file = f"data/{local_prefix}.vrt"
     gdal.BuildVRT(vrt_file, blobs, outputBounds=bounds)
     return Path(vrt_file)
-
-
-import os
-import osgeo_utils.gdal2tiles
-from tqdm import tqdm
 
 
 def create_tiles(
@@ -223,14 +228,3 @@ def mosaic_scenes(
         if scale_factor is not None:
             with rasterio.open(mosaic_file, "r+") as dst:
                 dst.scales = (scale_factor,)
-
-
-def get_bbox(gpdf: gpd.GeoDataFrame) -> List[float]:
-    bbox = gpdf.to_crs("EPSG:4326").bounds.values[0]
-    # Or the opposite!
-    bbox_crosses_antimeridian = bbox[0] < 0 and bbox[2] > 0
-    if bbox_crosses_antimeridian:
-        # This may be overkill, but nothing else was really working
-        bbox[0] = -179.9999999999
-        bbox[2] = 179.9999999999
-    return bbox
