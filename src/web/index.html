@@ -61,13 +61,28 @@ body { margin: 0;}
     ]
   };
 
+  const layers = ['evi', 'wofs'];
   const years = ['2015', '2016', '2017', '2018', '2019', '2020', '2021'];
+  let activeLayer = 'evi';
+  let activeYear = '2015';
 
-  function makeVisible(id) {
-    years.forEach(year => {
-      visible = year === id ? "visible": "none";
-      Map.setLayoutProperty(`evi_${year}`, 'visibility', visible);
+  function makeVisible() {
+    layers.forEach(layer => {
+      years.forEach(year => {
+        visible = year === activeYear && layer == activeLayer ? "visible": "none";
+        Map.setLayoutProperty(`${layer}_${year}`, 'visibility', visible);
+      })
     });
+  }
+
+  function changeYear(year) {
+    activeYear = year;
+    makeVisible();
+  }
+
+  function changeLayer(layer) {
+    activeLayer = layer;
+    makeVisible();
   }
 
   var Map = new maplibregl.Map({
@@ -77,9 +92,7 @@ body { margin: 0;}
     zoom: 4 // starting zoom
   });
 
-  Map.on('load', () => {
-    years.forEach((year) => {
-      const id = `evi_${year}`;
+  function addData(id) {
       Map.addSource(id, {
         scheme: 'tms',
         type: 'raster',
@@ -93,23 +106,42 @@ body { margin: 0;}
         type: "raster",
         layout: {visibility: "none"}
       });
+  }
 
+  Map.on('load', () => {
+    years.forEach((year) => {
+      addData(`evi_${year}`);
+      addData(`wofs_${year}`);
     });
-    makeVisible('2015');
 
+    const layerSelector = new SelectControl("selector");
+    layerSelector.element.addEventListener('change', e => {
+      changeLayer(e.target.value);
+    }, false);
 
-    const selector = new SelectControl("selector");
-    selector.element.addEventListener('change', e => {
-      makeVisible(e.target.value);
+    layers.forEach(layer => {
+      const option = document.createElement("option");
+      option.textContent = layer;
+      option.value = layer;
+      layerSelector.element.appendChild(option);
+    });
+    Map.addControl(layerSelector, 'top-left');
+
+    const yearSelector = new SelectControl("selector");
+    yearSelector.element.addEventListener('change', e => {
+      changeYear(e.target.value);
     }, false);
     
     years.forEach(year =>{ 
       const option = document.createElement("option");
       option.textContent = year;
       option.value = year;
-      selector.element.appendChild(option);
+      yearSelector.element.appendChild(option);
     });
-    Map.addControl(selector, 'top-left');
+
+    Map.addControl(yearSelector, 'top-left');
+
+    makeVisible();
   });
 </script>
 </html>

@@ -103,7 +103,7 @@ class Processor:
             item_xr = mask_clouds(item_xr)
             scale = 0.0000275
             offset = -0.2
-            item_xr = scale_and_offset(landsat_xr, scale=[scale], offset=offset)
+            item_xr = scale_and_offset(item_xr, scale=[scale], offset=offset)
 
             results = self.scene_processor(item_xr)
             results = scale_to_int16(
@@ -207,7 +207,6 @@ def run_processor(
         cluster.scale(400)
         with cluster.get_client() as client:
             print(client.dashboard_link)
-            print(f"nworkers: {len(client.ncores().values())}")
             processor.process_by_scene()
 
     if mosaic:

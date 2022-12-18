@@ -18,7 +18,9 @@ def evi(xr: DataArray) -> DataArray:
 
 
 def evi_for_year(landsat_xr: DataArray) -> None:
-    annual_medians = landsat_xr.median("time").squeeze("time", drop=True)
+    annual_medians = (
+        landsat_xr.resample(time="Y").median("time").squeeze("time", drop=True)
+    )
 
     return evi(annual_medians).reset_coords(drop=True).rio.write_crs(landsat_xr.rio.crs)
 
@@ -47,4 +49,5 @@ if __name__ == "__main__":
         mosaic=args.mosaic,
         tile=args.tile,
         remake_mosaic_for_tiles=args.remake_mosaic_for_tiles,
+        output_value_multiplier=1000,
     )
