@@ -34,16 +34,19 @@ class Processor:
     year: int
     scene_processor: Callable
     dataset_id: str
+    # Add collection variable - landsat or s2
     storage_account: str = os.environ["AZURE_STORAGE_ACCOUNT"]
     container_name: str = "output"
     credential: str = os.environ["AZURE_STORAGE_SAS_TOKEN"]
     aoi_file: Path = STORAGE_AOI_PREFIX / "aoi.tif"
+    # Change these to "tile_file" and "aoi_by_tile_file"
     pathrow_file: Path = STORAGE_AOI_PREFIX / "pathrows_in_aoi.gpkg"
     aoi_by_pathrow_file: Path = STORAGE_AOI_PREFIX / "aoi_split_by_landsat_pathrow.gpkg"
     color_ramp_file: Union[str, None] = None
     output_value_multiplier: int = 10000
     output_nodata: int = -32767
     dask_chunksize: int = 4096
+    scene_processor_kwargs: dict = dict()
 
     def __post_init__(self):
         self.container_client = ContainerClient(
@@ -81,6 +84,7 @@ class Processor:
     def process_by_scene(self) -> None:
         for i, row in self.pathrows.iterrows():
             last_time = time()
+            # Change this to get_areas(row), or get_collection(row)
             path = row["PATH"]
             row = row["ROW"]
             these_areas = self.get_areas(path, row)
@@ -88,6 +92,7 @@ class Processor:
             item_collection = item_collection_for_pathrow(
                 path,
                 row,
+                # obv change collection here
                 dict(
                     collections=["landsat-c2-l2"],
                     datetime=str(self.year),
@@ -105,7 +110,7 @@ class Processor:
             offset = -0.2
             item_xr = scale_and_offset(item_xr, scale=[scale], offset=offset)
 
-            results = self.scene_processor(item_xr)
+            results = self.scene_processor(item_xr, **self.scene_processor_kwargs)
             results = scale_to_int16(
                 results, self.output_value_multiplier, self.output_nodata
             )
@@ -113,6 +118,7 @@ class Processor:
             try:
                 write_to_blob_storage(
                     results,
+                    # Replace {path}_{row} with {self.get_scene_id()}
                     f"{self.prefix}_{path}_{row}.tif",
                     dict(driver="COG", compress="LZW", predictor=2),
                 )

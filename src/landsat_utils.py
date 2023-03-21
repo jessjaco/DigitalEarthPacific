@@ -34,14 +34,3 @@ def item_collection_for_pathrow(
             f"landsat:wrs_row={row:03d}",
         ],
     ).item_collection()
-
-
-def fix_bad_epsgs(item_collection: ItemCollection) -> None:
-    """Repairs some band epsg codes in stac items loaded from the Planetary
-    Computer stac catalog"""
-    # ** modifies in place **
-    # See https://github.com/microsoft/PlanetaryComputer/discussions/113
-    # Will get fixed at some point and we can remove this
-    for item in item_collection:
-        epsg = str(item.properties["proj:epsg"])
-        item.properties["proj:epsg"] = int(f"{epsg[0:3]}{int(epsg[3:]):02d}")

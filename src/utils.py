@@ -5,7 +5,7 @@ from typing import Dict, List, Union
 
 import azure.storage.blob
 from dask.distributed import Client, Lock
-import geopandas as gpd
+from geopandas import GeoDataFrame
 from geocube.api.core import make_geocube
 import numpy as np
 from osgeo import gdal
@@ -25,7 +25,7 @@ def scale_and_offset(
 
 
 def make_geocube_dask(
-    df: gpd.GeoDataFrame, measurements: List[str], like: xr.DataArray, **kwargs
+    df: GeoDataFrame, measurements: List[str], like: xr.DataArray, **kwargs
 ):
     """Dask-enabled geocube.make_geocube. Not completely implemented."""
 
@@ -41,9 +41,9 @@ def make_geocube_dask(
 
 
 def write_to_blob_storage(
-    xr: DataArray,
+    d: Union[DataArray, GeoDataFrame],
     path: Union[str, Path],
-    write_args: Dict,
+    write_args: Dict = dict(),
     #    output_scale: List = [1.0],
     storage_account: str = os.environ["AZURE_STORAGE_ACCOUNT"],
     container_name: str = "output",
@@ -55,11 +55,22 @@ def write_to_blob_storage(
         credential=credential,
     )
 
-    with io.BytesIO() as buffer:
-        xr.rio.to_raster(buffer, **write_args)
-        buffer.seek(0)
-        blob_client = container_client.get_blob_client(path)
-        blob_client.upload_blob(buffer, overwrite=True)
+    if isinstance(d, (DataArray, Dataset)):
+        with io.BytesIO() as buffer:
+            d.rio.to_raster(buffer, **write_args)
+            buffer.seek(0)
+            blob_client = container_client.get_blob_client(path)
+            blob_client.upload_blob(buffer, overwrite=True)
+    elif isinstance(d, GeoDataFrame):
+        # some sort of vector data
+        with fiona.io.MemoryFile() as buffer:
+            d.to_file(buffer, **write_args)
+            buffer.seek(0)
+            blob_client = container_client.get_blob_client(path)
+            blob_client.upload_blob(buffer, overwrite=True)
+    else:
+        # throw exception
+        print("rn you can only write a DataArray, Dataset, or GDF")
 
 
 def copy_to_blob_storage(
@@ -100,7 +111,7 @@ def raster_bounds(raster_path: Path) -> List:
         return list(t.bounds)
 
 
-def gpdf_bounds(gpdf: gpd.GeoDataFrame) -> List[float]:
+def gpdf_bounds(gpdf: GeoDataFrame) -> List[float]:
     """Returns the bounds for the give GeoDataFrame, and makes sure
     it doesn't cross the antimeridian."""
     bbox = gpdf.to_crs("EPSG:4326").bounds.values[0]

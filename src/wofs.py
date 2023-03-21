@@ -62,7 +62,7 @@ def wofs(tm_da: DataArray) -> DataArray:
     return water.where(tm.red.notnull(), float("nan"))
 
 
-def wofs_for_year(landsat_xr: DataArray) -> None:
+def wofs_for_year(landsat_xr: DataArray) -> DataArray:
     """landsat_xr is a DataArray with all landsat bands and likely multiple
     readings in time, with correct scale and offset applied"""
     # This needs to be done manually (rescale arg of stack doesn't
